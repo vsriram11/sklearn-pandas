@@ -3,11 +3,13 @@ import contextlib
 
 import pandas as pd
 import numpy as np
+import databricks.koalas as ks
 from scipy import sparse
 from sklearn.base import BaseEstimator, TransformerMixin
 
 from .cross_validation import DataWrapper
 from .pipeline import make_transformer_pipeline, _call_fit, TransformerPipeline
+from .mix_ins import DataframeMixin
 
 PY3 = sys.version_info[0] == 3
 if PY3:
@@ -62,7 +64,7 @@ def add_column_names_to_exception(column_names):
         raise
 
 
-class DataFrameMapper(BaseEstimator, TransformerMixin):
+class DataFrameMapper(BaseEstimator, TransformerMixin, DataframeMixin):
     """
     Map Pandas data frame column subsets to their own
     sklearn transformation.
@@ -172,6 +174,8 @@ class DataFrameMapper(BaseEstimator, TransformerMixin):
 
         Returns a numpy array with the data from the selected columns
         """
+        self._set_df_library(X)
+
         if isinstance(cols, string_types):
             return_vector = True
             cols = [cols]
@@ -183,7 +187,7 @@ class DataFrameMapper(BaseEstimator, TransformerMixin):
         # Will be dropped on sklearn-pandas 2.0.
         if isinstance(X, list):
             X = [x[cols] for x in X]
-            X = pd.DataFrame(X)
+            X = self.dflib_.DataFrame(X)
 
         elif isinstance(X, DataWrapper):
             X = X.df  # fetch underlying data
@@ -273,7 +277,7 @@ class DataFrameMapper(BaseEstimator, TransformerMixin):
     def get_dtype(self, ex):
         if isinstance(ex, np.ndarray) or sparse.issparse(ex):
             return [ex.dtype] * ex.shape[1]
-        elif isinstance(ex, pd.DataFrame):
+        elif isinstance(ex, pd.DataFrame) or isinstance(ex, ks.DataFrame):
             return list(ex.dtypes)
         else:
             raise TypeError(type(ex))
@@ -347,6 +351,7 @@ class DataFrameMapper(BaseEstimator, TransformerMixin):
             stacked = np.hstack(extracted)
 
         if self.df_out:
+            self._set_df_library(X)
             # if no rows were dropped preserve the original index,
             # otherwise use a new integer one
             no_rows_dropped = len(X) == len(stacked)
@@ -357,7 +362,7 @@ class DataFrameMapper(BaseEstimator, TransformerMixin):
 
             # output different data types, if appropriate
             dtypes = self.get_dtypes(extracted)
-            df_out = pd.DataFrame(
+            df_out = self.dflib_.DataFrame(
                 stacked,
                 columns=self.transformed_names_,
                 index=index)
