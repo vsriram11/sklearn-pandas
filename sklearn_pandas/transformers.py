@@ -1,23 +1,26 @@
 import numpy as np
 import pandas as pd
+import databricks.koalas as ks
 
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils.validation import check_is_fitted
 
+from .mix_ins import DataframeMixin
 
-def _get_mask(X, value):
+
+def _get_mask(X, value, dflib_):
     """
     Compute the boolean mask X == missing_values.
     """
     if value == "NaN" or \
        value is None or \
        (isinstance(value, float) and np.isnan(value)):
-        return pd.isnull(X)
+        return dflib_.isnull(X)
     else:
         return X == value
 
 
-class CategoricalImputer(BaseEstimator, TransformerMixin):
+class CategoricalImputer(BaseEstimator, TransformerMixin, DataframeMixin):
     """
     Impute missing values from a categorical/string np.ndarray or pd.Series
     with the most frequent value on the training data.
@@ -88,11 +91,11 @@ class CategoricalImputer(BaseEstimator, TransformerMixin):
         -------
             self: CategoricalImputer
         """
-
-        mask = _get_mask(X, self.missing_values)
+        self._set_df_library(X)
+        mask = _get_mask(X, self.missing_values, self.dflib_)
         X = X[~mask]
         if self.strategy == 'most_frequent':
-            modes = pd.Series(X).mode()
+            modes = self.dflib_.Series(X).mode()
         elif self.strategy == 'constant':
             modes = np.array([self.fill_value])
         if modes.shape[0] == 0:
@@ -121,13 +124,13 @@ class CategoricalImputer(BaseEstimator, TransformerMixin):
             np.ndarray
                 Data with imputed values.
         """
-
+        self._set_df_library(X)
         check_is_fitted(self, 'fill_')
 
         if self.copy:
             X = X.copy()
 
-        mask = _get_mask(X, self.missing_values)
+        mask = _get_mask(X, self.missing_values, self.dflib_)
         X[mask] = self.fill_
 
         return np.asarray(X)
